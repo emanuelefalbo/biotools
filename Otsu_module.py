@@ -14,6 +14,7 @@ def cml_parser():
     requiredNamed = parser.add_argument_group('required named arguments')
     requiredNamed.add_argument('-i', '--input', help='Input file CRISPR-Cas9 matrix', required=True)
     requiredNamed.add_argument('-ref', '--reference', help='Input reference file name', required=True)
+    requiredNamed.add_argument('-t', '--tissue', nargs='+', default='all', help='list of tissue to be parsed; all cell lines are employed if == all', required=True)
     opts = parser.parse_args()
     if opts.input == None:
         raise FileNotFoundError('Missing CRISPR-Cas9 input file or None')
@@ -134,7 +135,7 @@ def OtsuCore(df, name):
     T = df.to_numpy()
     NumberOfClasses = 2
     
-    # print("Two-class labelling:")
+    print("Two-class labelling:")
     # Perform quantization
     Q2, Thr = QuantizeByColumns(T, NumberOfClasses)
     Q2 = Q2 - 1
@@ -144,9 +145,9 @@ def OtsuCore(df, name):
     dfout.index.name = 'name'
     dfout['label'] = modeQ2.ravel()
     dfout = dfout.replace({0: 'E', 1:'NE'})
-    # print(dfout.value_counts())
+    print(dfout.value_counts())
     
-    # print("Three-class labelling:")
+    print("Three-class labelling:")
     NE_genes = dfout[dfout['label']=='NE'].index
     TNE = df.loc[NE_genes].to_numpy()
     NumberOfClasses = 2
@@ -162,18 +163,19 @@ def OtsuCore(df, name):
     # Save the results to the output CSV file
     fout = 'otsu_label_' + f'{name}.csv'
     dfout.to_csv(fout)
-    # print(dfout.value_counts())
+    print(dfout.value_counts())
 
     return Q2
 
-def OtsuTissues(df, df_cl):
+def OtsuTissues(df, df_cl, list_tissues):
     depmap_id = df_cl["depmapId"]
     lineage_1 = df_cl["lineage1"]
     lineage_1_unique = list(set(lineage_1))
     lineage_1_unique = [ var.replace('/', '_') for var in lineage_1_unique]
     sum_shape = 0
     Q2_tot = []
-    for tissue in lineage_1_unique:
+    # for tissue in lineage_1_unique:
+    for tissue in  list_tissues:
         id_tissue = lineage_1[lineage_1 == tissue].index
         name_cl = depmap_id[id_tissue].tolist()
         id_true = []
@@ -182,7 +184,6 @@ def OtsuTissues(df, df_cl):
                 id_true.append(k)
         df_tissue = df.iloc[:, id_true]
         sum_shape += df_tissue.shape[1]
-        print(f' Processing {tissue}')
         if df_tissue.shape[1] != 0:
             print(f' Processing {tissue}')
             Q2_tot.append(OtsuCore(df=df_tissue, name=tissue))
@@ -198,7 +199,7 @@ def main():
     if df_map.shape[0] < df_map.shape[1]:
         df_map = df_map.T
     df_cl = pd.read_csv(opts.reference)
-    Q2_tot = OtsuTissues(df_map, df_cl)
+    Q2_tot = OtsuTissues(df_map, df_cl, opts.tissue)
     print(len(Q2_tot))
     # Execute mode on each tissue and sort'em
     Q2Mode_tot = []
@@ -206,15 +207,14 @@ def main():
         Q2Mode_tot.append(stats.mode(k, axis=1, keepdims=False).mode)
     Q2Mode_tot = np.vstack(Q2Mode_tot).T
     
-    # # Get mode of mode
+    # # Get mode of mode among tissues
     modeOfmode = stats.mode(Q2Mode_tot, axis=1, keepdims=False).mode
     dfout =  pd.DataFrame(index=df_map.index)
     dfout.index.name = 'name'
     dfout['label'] = modeOfmode.ravel()
     dfout = dfout.replace({0: 'E', 1:'NE'})
-    dfout.to_csv("Otsu_modeOfmode.csv")
+    dfout.to_csv("Otsu_2Mode_tissues.csv")
     print(dfout.value_counts())
-    
     
     
 if __name__ == "__main__":
